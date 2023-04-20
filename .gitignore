@@ -774,7 +774,6 @@ pip-selfcheck.json
 *.zip
 *.tmp
 *.os
-*.js
 *.pb
 *.dcp
 *.hwdef
