@@ -2,3 +2,4 @@ hf-webdriver-manager>=0.1.0
 selenium>=4
 pybrowsers
 pillow
+hbutils>=0.9.0

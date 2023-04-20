@@ -9,18 +9,19 @@ Simplest demo (chrome browser required.)
 ```python
 import time
 
-from br.page import add_monitor, read_records
+from br.page import create_monitor_thread
 from br.utils import get_browser_driver
 
-chrome = get_browser_driver()
+if __name__ == '__main__':
+    chrome = get_browser_driver()
 
-chrome.get('https://www.baidu.com')
-add_monitor(chrome)
+    _start, _stop = create_monitor_thread(chrome, save_dir='test_records/1')
+    chrome.get('https://www.baidu.com')
+    _start()  # start watch on browser
 
-time.sleep(10)
+    time.sleep(10)
 
-print(read_records(chrome))
-
-chrome.close()
+    _stop()  # stop watching and save to the save_dir
+    chrome.close()
 
 ```
