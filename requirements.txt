@@ -1,0 +1,4 @@
+hf-webdriver-manager>=0.1.0
+selenium>=4
+pybrowsers
+pillow
