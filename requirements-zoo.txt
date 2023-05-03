@@ -1,2 +1,14 @@
 ultralytics
 di-toolkit
+torch<2
+lpips
+matplotlib
+torchvision
+tqdm
+onnx
+onnxoptimizer
+onnxsim
+click
+di-toolkit
+tensorboard
+huggingface_hub

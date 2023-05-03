@@ -2,7 +2,7 @@ import os.path
 
 from ultralytics import YOLO
 
-from .base import _TRAIN_DIR as _GLOBAL_TRAIN_DIR
+from zoo.base import _TRAIN_DIR as _GLOBAL_TRAIN_DIR
 
 _TRAIN_DIR = os.path.join(_GLOBAL_TRAIN_DIR, 'web_detect')
 
