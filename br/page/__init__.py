@@ -1,1 +1,1 @@
-from .monitor import add_monitor, read_records, WebDriverMonitor
+from .monitor import add_monitor, read_event_records, WebDriverMonitor

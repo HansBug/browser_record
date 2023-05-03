@@ -13,7 +13,7 @@ from br.utils import get_browser_driver
 if __name__ == '__main__':
     chrome = get_browser_driver()
 
-    with WebDriverMonitor(chrome, save_dir='test_records/2x') as monitor:
+    with WebDriverMonitor(chrome, save_as='test_records/record.json') as monitor:
         chrome.get('https://www.baidu.com')
         monitor.start()
 

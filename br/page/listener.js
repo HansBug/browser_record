@@ -36,7 +36,6 @@ function addMonitor() {
         let full_record = Object.assign({
             time: getTimestamp(), uuid: generateUUID(),
         }, record)
-        console.log(full_record)
         arr.push(full_record)
     }
 
@@ -80,13 +79,32 @@ function addMonitor() {
             ctrl: event.ctrlKey,
         })
     })
-    window.addEventListener('scroll', function (event) {
+
+    function _recordScrollInfo() {
         appendRecord({
             event: 'scroll',
             scroll_x: window.pageXOffset || document.documentElement.scrollLeft || document.body.scrollLeft,
             scroll_y: window.pageYOffset || document.documentElement.scrollTop || document.body.scrollTop,
-        })
+        });
+    }
+
+    function _recordViewInfo() {
+        appendRecord({
+            event: 'resize',
+            view_height: window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight,
+            view_width: window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth,
+        });
+    }
+
+    _recordScrollInfo()
+    _recordViewInfo()
+
+    window.addEventListener('scroll', function (event) {
+        _recordScrollInfo()
     });
+    window.addEventListener('resize', function (event) {
+        _recordViewInfo()
+    })
 
     document.loadRecords = function () {
         let retval = deepcopy(arr);

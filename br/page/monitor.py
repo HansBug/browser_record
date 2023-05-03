@@ -5,35 +5,49 @@ import time
 import uuid
 from threading import Event, Thread, Lock
 
-from hbutils.random import random_sha1_with_timestamp
+from hbutils.string import env_template
 from selenium.common import NoSuchWindowException
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from .vision import VisionRecorder, _base64_url_to_image
 from ..utils import capture_screen
 
 _LISTENER_JS = pathlib.Path(os.path.normpath(os.path.join(__file__, '..', 'listener.js'))).read_text()
+_HTML2CANVAS_JS = pathlib.Path(os.path.normpath(os.path.join(__file__, '..', 'html2canvas.js'))).read_text()
 
 
 def add_monitor(driver: WebDriver):
     driver.execute_script(_LISTENER_JS)
 
 
-def read_records(driver: WebDriver):
+def read_event_records(driver: WebDriver):
     return driver.execute_script('return document.loadRecords();')
 
 
-class WebDriverMonitor:
-    def __init__(self, driver: WebDriver, save_dir: str, interval: float = 0.2):
-        self.driver = driver
-        self.save_dir = save_dir
-        self.interval = interval
+def add_html2canvas(driver: WebDriver, interval_ms: int = 200):
+    driver.execute_script(env_template(_HTML2CANVAS_JS, {'interval_ms': interval_ms}, safe=True))
 
-        self._last_driver_url = None
+
+def read_screenshot_records(driver: WebDriver):
+    return driver.execute_script('return document.loadScreenshotRecords();')
+
+
+class WebDriverMonitor:
+    def __init__(self, driver: WebDriver, save_as: str, event_interval: float = 0.2,
+                 system_view_interval: float = 1.0):
+        self.driver = driver
+        self.save_as = save_as
+        self.event_interval = event_interval
+        self.system_view_interval = system_view_interval
+
         self._start_signal = Event()
         self._stop_signal = Event()
-        self._page_records = []
+        self._page_event_records = []
+        self._page_vision = VisionRecorder()
+        self._system_vision = VisionRecorder()
 
         self._t_page_event = Thread(target=self._page_event_monitor)
+        self._t_page_screenshot = Thread(target=self._page_screenshot)
         self._t_system_screenshot = Thread(target=self._system_screenshot)
         self._t_result_save = Thread(target=self._result_save)
 
@@ -41,25 +55,46 @@ class WebDriverMonitor:
 
     def _page_event_monitor(self):
         _last_time = time.time()
+        _last_driver_url = None
         while not self._stop_signal.is_set():
-
             try:
-                if self.driver.current_url != self._last_driver_url:
-                    self._page_records.append({
+                if self.driver.current_url != _last_driver_url:
+                    self._page_event_records.append({
                         'event': 'url_change',
                         'time': time.time(),
                         'uuid': str(uuid.uuid4()),
-                        'last_url': self._last_driver_url,
+                        'last_url': _last_driver_url,
                         'new_url': self.driver.current_url,
                     })
-                    self._last_driver_url = self.driver.current_url
+                    _last_driver_url = self.driver.current_url
                     add_monitor(self.driver)
-                self._page_records.extend(read_records(self.driver))
+                self._page_event_records.extend(read_event_records(self.driver))
             except NoSuchWindowException:
                 self._stop_signal.set()
                 break
 
-            _last_time += self.interval
+            _last_time += self.event_interval
+            _duration = _last_time - time.time()
+            if _duration > 0:
+                time.sleep(_duration)
+
+    def _page_screenshot(self):
+        _last_time = time.time()
+        _last_driver_url = None
+        while not self._stop_signal.is_set():
+            try:
+                if self.driver.current_url != _last_driver_url:
+                    _last_driver_url = self.driver.current_url
+                    add_html2canvas(self.driver, int(self.event_interval * 1000))
+
+                for item in read_screenshot_records(self.driver):
+                    timestamp, raw_data = item['time'], item['raw']
+                    self._page_vision.append(_base64_url_to_image(raw_data), timestamp)
+            except NoSuchWindowException:
+                self._stop_signal.set()
+                break
+
+            _last_time += self.event_interval
             _duration = _last_time - time.time()
             if _duration > 0:
                 time.sleep(_duration)
@@ -67,45 +102,45 @@ class WebDriverMonitor:
     def _system_screenshot(self):
         _last_time = time.time()
         while not self._stop_signal.is_set():
-            name = f'screenshot_{random_sha1_with_timestamp()}.png'
-            dirname = os.path.join(self.save_dir, 'screenshots')
-            os.makedirs(dirname, exist_ok=True)
-            filename = os.path.join(dirname, name)
             image, timestamp = capture_screen()
-            image.save(filename)
-            self._page_records.append({
-                'event': 'screenshot',
-                'time': time.time(),
-                'uuid': str(uuid.uuid4()),
-                'image': name,
-            })
-            print('sc', time.time())
+            self._system_vision.append(image, timestamp)
 
-            _last_time += self.interval
+            _last_time += self.system_view_interval
             _duration = _last_time - time.time()
             if _duration > 0:
                 time.sleep(_duration)
 
-    def _result_save(self):
+    def _wait_for_watching_end(self):
         self._stop_signal.wait()
         self._t_page_event.join()
+        self._t_page_screenshot.join()
         self._t_system_screenshot.join()
 
-        items = [item for _, item in sorted(enumerate(self._page_records), key=lambda x: (x[1]['time'], x[0]))]
-        with open(os.path.join(self.save_dir, 'record.json'), 'w') as f:
-            json.dump(items, f, indent=4)
+    def _result_save(self):
+        self._wait_for_watching_end()
+        events = [item for _, item in sorted(enumerate(self._page_event_records), key=lambda x: (x[1]['time'], x[0]))]
+        save_dir = os.path.dirname(self.save_as)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
+        with open(self.save_as, 'w') as f:
+            json.dump({
+                'events': events,
+                'page_vision': self._page_vision.to_json(),
+                'system_vision': self._system_vision.to_json(),
+            }, f, indent=4)
 
     def _join(self):
         self._stop_signal.wait()
         self._t_system_screenshot.join()
         self._t_page_event.join()
+        self._t_page_screenshot.join()
         self._t_result_save.join()
 
     def start(self):
         with self._lock:
-            os.makedirs(self.save_dir, exist_ok=True)
             self._t_system_screenshot.start()
             self._t_page_event.start()
+            self._t_page_screenshot.start()
             self._t_result_save.start()
 
     def stop(self):
