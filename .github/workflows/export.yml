@@ -36,7 +36,7 @@ jobs:
       - name: Transform models to onnx format
         run: |
           python -m zoo.${{ matrix.model-name }} export -O . 
-          ls -al ./${{ matrix.model-name }}
+          ls -al .
           zip -r ${{ matrix.model-name }}.zip *.onnx
       - name: Upload the character databases
         uses: actions/upload-artifact@v3
