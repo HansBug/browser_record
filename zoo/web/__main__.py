@@ -24,6 +24,9 @@ def cli():
 
 _KNOWN_CKPTS: List[str] = [
     'web_detect_best_m.pt',
+    'web_detect_best_m_4x.pt',
+    'web_detect_best_m_4x_150.pt',
+    'web_detect_best_m_4x_600.pt',
 ]
 
 
