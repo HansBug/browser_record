@@ -3,6 +3,7 @@ import os.path
 import pathlib
 import time
 import uuid
+from queue import Queue, Empty
 from threading import Event, Thread, Lock
 
 from hbutils.string import env_template
@@ -21,7 +22,7 @@ def add_monitor(driver: WebDriver):
 
 
 def read_event_records(driver: WebDriver):
-    return driver.execute_script('return document.loadRecords();')
+    return driver.execute_script('return document.loadRecords();') or []
 
 
 def add_html2canvas(driver: WebDriver, interval_ms: int = 200):
@@ -29,7 +30,7 @@ def add_html2canvas(driver: WebDriver, interval_ms: int = 200):
 
 
 def read_screenshot_records(driver: WebDriver):
-    return driver.execute_script('return document.loadScreenshotRecords();')
+    return driver.execute_script('return document.loadScreenshotRecords();') or []
 
 
 class WebDriverMonitor:
@@ -42,16 +43,30 @@ class WebDriverMonitor:
 
         self._start_signal = Event()
         self._stop_signal = Event()
+        self._start_time = None
+        self._end_time = None
         self._page_event_records = []
+
+        self._page_vision_queue = Queue()
         self._page_vision = VisionRecorder()
         self._system_vision = VisionRecorder()
 
         self._t_page_event = Thread(target=self._page_event_monitor)
-        self._t_page_screenshot = Thread(target=self._page_screenshot)
+        self._t_page_vision_maintain = Thread(target=self._page_vision_maintain)
         self._t_system_screenshot = Thread(target=self._system_screenshot)
         self._t_result_save = Thread(target=self._result_save)
 
         self._lock = Lock()
+
+    def _page_vision_maintain(self):
+        while not self._stop_signal.is_set() or not self._page_vision_queue.empty():
+            try:
+                item = self._page_vision_queue.get(block=True, timeout=self.event_interval)
+            except Empty:
+                continue
+
+            timestamp, raw_data = item['time'], item['raw']
+            self._page_vision.append(_base64_url_to_image(raw_data), timestamp)
 
     def _page_event_monitor(self):
         _last_time = time.time()
@@ -68,28 +83,12 @@ class WebDriverMonitor:
                     })
                     _last_driver_url = self.driver.current_url
                     add_monitor(self.driver)
-                self._page_event_records.extend(read_event_records(self.driver))
-            except NoSuchWindowException:
-                self._stop_signal.set()
-                break
-
-            _last_time += self.event_interval
-            _duration = _last_time - time.time()
-            if _duration > 0:
-                time.sleep(_duration)
-
-    def _page_screenshot(self):
-        _last_time = time.time()
-        _last_driver_url = None
-        while not self._stop_signal.is_set():
-            try:
-                if self.driver.current_url != _last_driver_url:
-                    _last_driver_url = self.driver.current_url
                     add_html2canvas(self.driver, int(self.event_interval * 1000))
 
+                self._page_event_records.extend(read_event_records(self.driver))
                 for item in read_screenshot_records(self.driver):
-                    timestamp, raw_data = item['time'], item['raw']
-                    self._page_vision.append(_base64_url_to_image(raw_data), timestamp)
+                    self._page_vision_queue.put(item)
+
             except NoSuchWindowException:
                 self._stop_signal.set()
                 break
@@ -112,8 +111,9 @@ class WebDriverMonitor:
 
     def _wait_for_watching_end(self):
         self._stop_signal.wait()
+        self._end_time = time.time()
         self._t_page_event.join()
-        self._t_page_screenshot.join()
+        self._t_page_vision_maintain.join()
         self._t_system_screenshot.join()
 
     def _result_save(self):
@@ -124,6 +124,8 @@ class WebDriverMonitor:
             os.makedirs(save_dir, exist_ok=True)
         with open(self.save_as, 'w') as f:
             json.dump({
+                'start_time': self._start_time,
+                'end_time': self._end_time,
                 'events': events,
                 'page_vision': self._page_vision.to_json(),
                 'system_vision': self._system_vision.to_json(),
@@ -133,15 +135,16 @@ class WebDriverMonitor:
         self._stop_signal.wait()
         self._t_system_screenshot.join()
         self._t_page_event.join()
-        self._t_page_screenshot.join()
+        self._t_page_vision_maintain.join()
         self._t_result_save.join()
 
     def start(self):
         with self._lock:
             self._t_system_screenshot.start()
+            self._t_page_vision_maintain.start()
             self._t_page_event.start()
-            self._t_page_screenshot.start()
             self._t_result_save.start()
+            self._start_time = time.time()
 
     def stop(self):
         with self._lock:

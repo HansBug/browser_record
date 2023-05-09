@@ -8237,7 +8237,7 @@ if (typeof document.get_screenshot === 'undefined') {
 
     document.loadScreenshotRecords = function () {
         let retval = deepcopy(_screenshot_records);
-        _screenshot_records.splice(0, _screenshot_records.length);
+        _screenshot_records.splice(0, retval.length);  // use retval.length to resolve the thread problem
         return retval;
     }
 

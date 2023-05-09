@@ -1,11 +1,11 @@
 import io
 import os
+import zlib
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import List, Optional
 
 import numpy as np
-import zlib
 from PIL import Image
 from hbutils.encoding import base64_encode, base64_decode
 from hbutils.string import truncate
@@ -65,7 +65,7 @@ def _base64_url_to_image(url: str):
 
 
 class VisionRecorder:
-    def __init__(self, max_diff_frames: int = 50, min_deflation: float = 0.6, pixel_diff_threshold: float = 0.05):
+    def __init__(self, max_diff_frames: int = 50, min_deflation: float = 0.1, pixel_diff_threshold: float = 0.05):
         self._records: List[VisionItem] = []
         self._last_view: Optional[Image.Image] = None
         self._last_new_frame: int = -1
@@ -87,8 +87,6 @@ class VisionRecorder:
         f_lab1 = lab1.astype(float) / 255.0
         f_lab2 = lab2.astype(float) / 255.0
 
-        i_lab1 = lab1.astype(np.uint32).transpose((2, 0, 1))
-        i_lab1 = (i_lab1[0] << 16) | (i_lab1[1] << 8) | i_lab1[2]
         i_lab2 = lab2.astype(np.uint32).transpose((2, 0, 1))
         i_lab2 = (i_lab2[0] << 16) | (i_lab2[1] << 8) | i_lab2[2]
 
